@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Генератор ландшафтов</title>
+</head>
+<body>
+    <h1>Генератор 3D-ландшафтов (FastAPI + Plotly)</h1>
+    <form method="post">
+        <label>Ширина: <input type="number" name="width" value="200"></label><br>
+        <label>Высота: <input type="number" name="height" value="100"></label><br>
+        <label>Масштаб: <input type="number" step="0.1" name="scale" value="20.0"></label><br>
+
+        <label>Пресет:
+            <select name="preset">
+                <option value="">(Без пресета)</option>
+                <option value="Плоская поверхность">Плоская поверхность</option>
+                <option value="Холмистая местность">Холмистая местность</option>
+                <option value="Горный хребет">Горный хребет</option>
+            </select>
+        </label><br>
+
+        <label>Seed:
+            <input type="number" name="seed">
+        </label>
+        <label>
+            <input type="checkbox" name="random_seed" value="1"> Случайный сид
+        </label><br>
+
+        <button type="submit">Сгенерировать</button>
+    </form>
+</body>
+</html>

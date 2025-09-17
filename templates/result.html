@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Результат ландшафта</title>
+    <style>
+        body {
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background: #f0f0f0;
+        }
+
+        .landscape {
+            flex-grow: 1;
+            display: flex; 
+        }
+
+        .landscape > div {
+            flex-grow: 1;
+            height: 100%;     
+            min-height: 600px
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Сгенерированный ландшафт</h1>
+        <a href="/">Назад к форме</a>
+    </header>
+    <div class="landscape">
+        {{ fig_html | safe }}
+    </div>
+</body>
+</html>
