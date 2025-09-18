@@ -2,9 +2,27 @@ import numpy as np
 import plotly.graph_objects as go
 from perlin import PerlinNoise2D
 from plotly.io import to_html
-from bilinear_interpolator import BilinearInterpolator
+import pandas as pd
 import heapq
 
+def plot_topview(height_map, return_html=True):
+        fig = go.Figure(data=go.Heatmap(
+            z=height_map,
+            colorscale="Earth",
+            showscale=True
+        ))
+
+        fig.update_layout(
+            title="Выберите старт и финиш (кликните на 2 точки)",
+            xaxis=dict(scaleanchor="y"),
+            yaxis=dict(autorange="reversed"),
+            dragmode="pan"
+        )
+
+        if return_html:
+            return to_html(fig, include_plotlyjs="cdn", full_html=False)
+        
+        
 class LandscapeGenerator:
     def __init__(self, width=200, height=100, scale=20.0, seed=None, grid_size=100, zscale=5):
         self.width = width
@@ -16,114 +34,94 @@ class LandscapeGenerator:
 
         self.perlin = PerlinNoise2D(seed=self.seed, grid_size=self.grid_size, scale=self.scale)
 
-
     def generate_heightmap(self):
         height_map = self.perlin.generate_map(self.width, self.height)
         height_map = (height_map - height_map.min()) / (height_map.max() - height_map.min())
         height_map *= self.zscale
         return height_map
 
+    def heuristic(self, state, goal):
+        x, y, vx, vy = state
+        gx, gy = goal
+        return abs(x - gx) + abs(y - gy) + abs(vx) + abs(vy)
 
-    def simulate_motion(self, steps=200, dt=0.1, g=9.81, mu=0.05,
-                    x0=10, y0=10, vx0=0.5, vy0=0.0):
-        height_map = self.generate_heightmap()
+    import pandas as pd
 
-        X = np.arange(0, self.width)
-        Y = np.arange(0, self.height)
-        X, Y = np.meshgrid(X, Y)
-        interpolator = BilinearInterpolator(X, Y, height_map)
+    def astar_discrete(self, height_map, start, goal, max_steps=5000):
+        moves = [-1, 0, 1]
+        open_set = []
+        heapq.heappush(open_set, (0, start))
+        came_from = {}
+        g_score = {start: 0}
+        logs = [] 
+        while open_set:
+            _, current = heapq.heappop(open_set)
+            x, y, vx, vy = current
 
-        def f(x, y):
-            z, _, _ = interpolator.eval(x, y)
-            return z if z is not None else 0
+            if (x, y) == goal and vx == 0 and vy == 0:
+                path = [current]
+                while current in came_from:
+                    current = came_from[current]
+                    path.append(current)
+                path = path[::-1]
 
-        def grad_f(x, y):
-            _, fx, fy = interpolator.eval(x, y)
-            if fx is None or fy is None:
-                return 0.0, 0.0
-            return fx, fy
+                df = pd.DataFrame(logs)
+                return path, df 
 
-        x, y = x0, y0
-        vx, vy = vx0, vy0
-        trajectory = [(x, y, f(x, y))]
+            if g_score[current] > max_steps:
+                continue
 
-        for _ in range(steps):
-            fx, fy = grad_f(x, y)
-            denom = np.sqrt(fx**2 + fy**2 + 1)
+            for ax in moves:
+                for ay in moves:
+                    new_vx = vx + ax
+                    new_vy = vy + ay
+                    new_x = x + new_vx
+                    new_y = y + new_vy
 
-            ax = -g * fx / denom - mu * vx
-            ay = -g * fy / denom - mu * vy
-
-            vx += ax * dt
-            vy += ay * dt
-            x += vx * dt
-            y += vy * dt
-            z = f(x, y)
-
-            z = f(x, y) + 0.5
-            trajectory.append((x, y, z))
-
-        return zip(*trajectory)
-
-
-    def astar_continuous(self, interpolator, start, goal, step=2):
-            def heuristic(a, b):
-                return np.linalg.norm(np.array(a) - np.array(b))
-
-            open_set = []
-            heapq.heappush(open_set, (0, start))
-
-            came_from = {}
-            g_score = {start: 0}
-
-            while open_set:
-                _, current = heapq.heappop(open_set)
-                if heuristic(current, goal) < step:  
-                    path = [current]
-                    while current in came_from:
-                        current = came_from[current]
-                        path.append(current)
-                    return path[::-1]
-
-                cx, cy = current
-                cz, _, _ = interpolator.eval(cx, cy)
-
-                for dx, dy in [(-step,0),(step,0),(0,-step),(0,step),
-                            (-step,-step),(step,step),(-step,step),(step,-step)]:
-                    nx, ny = cx + dx, cy + dy
-                    if nx < 0 or nx >= self.width or ny < 0 or ny >= self.height:
-                        continue
-                    nz, _, _ = interpolator.eval(nx, ny)
-                    if nz is None: 
+                    if not (0 <= new_x < self.width and 0 <= new_y < self.height):
                         continue
 
-                    dz = abs(nz - cz)
-                    move_cost = np.sqrt(dx**2 + dy**2) + dz 
-                    tentative_g = g_score[current] + move_cost
+                    dz = height_map[new_y, new_x] - height_map[y, x]
+                    step_cost = 1 + max(0, dz * 10)
+                    tentative_g = g_score[current] + step_cost
 
-                    neighbor = (nx, ny)
-                    if tentative_g < g_score.get(neighbor, float('inf')):
+                    neighbor = (new_x, new_y, new_vx, new_vy)
+
+                    if tentative_g < g_score.get(neighbor, float("inf")):
                         came_from[neighbor] = current
                         g_score[neighbor] = tentative_g
-                        f_score = tentative_g + heuristic(neighbor, goal)
+                        f_score = tentative_g + self.heuristic(neighbor, goal)
                         heapq.heappush(open_set, (f_score, neighbor))
-            return None
+
+                        logs.append({
+                            "X": new_x, "Y": new_y,
+                            "Vx": new_vx, "Vy": new_vy,
+                            "Высота": round(height_map[new_y, new_x], 2),
+                            "Δz": round(dz, 2),
+                            "Стоимость шага": round(step_cost, 2),
+                            "Накопленная стоимость": round(tentative_g, 2),
+                            "Эвристика": round(self.heuristic(neighbor, goal), 2),
+                            "F = g+h": round(f_score, 2)
+                        })
+
+        return None, pd.DataFrame()
 
 
-    def find_path_continuous(self, start=(10,10), goal=(80,80), step=2):
+    def find_path_discrete(self, start=(10, 10, 0, 0), goal=(80, 80)):
         height_map = self.generate_heightmap()
-        X = np.arange(0, self.width)
-        Y = np.arange(0, self.height)
-        interpolator = BilinearInterpolator(X, Y, height_map)
+        path, df = self.astar_discrete(height_map, start, goal)
 
-        path = self.astar_continuous(interpolator, start, goal, step=step)
-        if not path:
-            return [], [], []
-        xs, ys = zip(*path)
-        zs = [(interpolator.eval(x, y)[0] or 0) + 0.5 for x, y in path]
-        return xs, ys, zs
+        if path is None:
+            return [], [], [], pd.DataFrame()
 
-    def plot(self, output_file=None, return_html=False, with_motion=False, with_path=False, animate=False):
+        xs = [p[0] for p in path]
+        ys = [p[1] for p in path]
+        zs = [height_map[y, x] + 0.5 for x, y, _, _ in path]
+
+        return xs, ys, zs, df
+    
+    
+    def plot(self, output_file=None, return_html=False, with_motion=False, with_path=False, animate=False, start=(10, 10, 0, 0), goal=(80, 80)):
         height_map = self.generate_heightmap()
         X = np.linspace(0, self.width, self.width)
         Y = np.linspace(0, self.height, self.height)
@@ -139,16 +137,8 @@ class LandscapeGenerator:
             showscale=True
         ))
 
-        if with_motion:
-            xs, ys, zs = self.simulate_motion()
-            xs, ys, zs = list(xs), list(ys), list(zs)
-            fig.add_trace(go.Scatter3d(
-                x=xs, y=ys, z=zs,
-                mode="lines", line=dict(color="red", width=4), name="Trajectory"
-            ))
-
         if with_path:
-            xs, ys, zs = self.find_path_continuous((10, 10), (80, 80))
+            xs, ys, zs, df = self.find_path_discrete(start, goal)
             fig.add_trace(go.Scatter3d(
                 x=xs, y=ys, z=zs,
                 mode="lines",
@@ -244,4 +234,3 @@ class LandscapeGenerator:
             fig.write_html(output_file)
         else:
             fig.show()
-

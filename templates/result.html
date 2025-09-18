@@ -27,7 +27,7 @@
         .landscape > div {
             flex-grow: 1;
             height: 100%;     
-            min-height: 600px
+            min-height: 600px;
         }
     </style>
 </head>
@@ -36,8 +36,37 @@
         <h1>Сгенерированный ландшафт</h1>
         <a href="/">Назад к форме</a>
     </header>
-    <div class="landscape">
+    <div class="landscape" id="plot">
         {{ fig_html | safe }}
     </div>
+
+    <script>
+    let points = [];
+
+    document.addEventListener("DOMContentLoaded", () => {
+        let plot = document.getElementById('plot').children[0]; 
+
+        plot.on('plotly_click', function(data){
+            let x = Math.round(data.points[0].x);
+            let y = Math.round(data.points[0].y);
+
+            points.push({x, y});
+            if (points.length === 1) {
+                alert(`Старт выбрано: (${x}, ${y})`);
+            }
+            if (points.length === 2) {
+                alert(`Финиш выбрано: (${x}, ${y})`);
+
+                fetch("/run_pathfinding", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify(points)
+                }).then(r => r.text()).then(html => {
+                    document.body.innerHTML = html;
+                });
+            }
+        });
+    });
+    </script>
 </body>
 </html>
